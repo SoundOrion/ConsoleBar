@@ -4,6 +4,13 @@ using System.Threading.Tasks;
 
 class Program
 {
+    // スピナー用の文字
+    private static readonly char[] SpinnerChars = { '|', '/', '-', '\\' };
+    private static int _spinnerIndex = 0;
+
+    // Console 出力を守るロック
+    private static readonly object ConsoleLock = new();
+
     static async Task Main()
     {
         // ダミーの「サーバー」リスト
@@ -18,16 +25,16 @@ class Program
 
         var options = new ParallelOptions
         {
-            MaxDegreeOfParallelism = 4 // 並列数（調整してみてOK）
+            MaxDegreeOfParallelism = 4
         };
 
-        Console.WriteLine("★ 進捗バーのサンプル開始");
+        Console.WriteLine("★ 進捗バー（スピナー付き）サンプル開始");
 
         await Parallel.ForEachAsync(items, options, async (item, token) =>
         {
             // ダミーの処理（ランダム時間スリープ）
             int ms = Random.Shared.Next(500, 2500);
-            Thread.Sleep(ms); // わざとブロッキング
+            await Task.Delay(ms, token); // async 版
 
             // 完了数をスレッド安全に加算
             int finished = Interlocked.Increment(ref done);
@@ -35,8 +42,11 @@ class Program
             // % へ換算
             double percent = (double)finished / total * 100.0;
 
+            // スピナーのインデックスをインクリメント
+            int spinnerIndex = Interlocked.Increment(ref _spinnerIndex);
+
             // 進捗バー描画
-            DrawProgressBar(percent, finished, total);
+            DrawProgressBar(percent, finished, total, spinnerIndex);
         });
 
         // 行を整える
@@ -45,8 +55,8 @@ class Program
         Console.ReadLine();
     }
 
-    // ★ 蛍光緑の進捗バー描画メソッド
-    private static void DrawProgressBar(double progressPercent, int current, int total)
+    // ★ スピナー付き蛍光緑の進捗バー描画メソッド
+    private static void DrawProgressBar(double progressPercent, int current, int total, int spinnerIndex)
     {
         int barWidth = 40;
         int filled = (int)(barWidth * progressPercent / 100.0);
@@ -54,17 +64,32 @@ class Program
         string barFilled = new('■', filled);
         string barEmpty = new('-', barWidth - filled);
 
-        var oldColor = Console.ForegroundColor;
+        char spinner = SpinnerChars[spinnerIndex % SpinnerChars.Length];
 
-        Console.Write("\r[");
+        lock (ConsoleLock)
+        {
+            var oldColor = Console.ForegroundColor;
 
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.Write(barFilled);
+            // 行頭に戻して上書き
+            Console.Write("\r");
 
-        Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.Write(barEmpty);
+            // スピナー
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.Write(spinner);
+            Console.Write(' ');
 
-        Console.ForegroundColor = oldColor;
-        Console.Write($"]  {progressPercent,6:F2}%  ({current}/{total})");
+            // バー本体
+            Console.Write('[');
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Write(barFilled);
+
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.Write(barEmpty);
+
+            Console.ForegroundColor = oldColor;
+
+            Console.Write($"]  {progressPercent,6:F2}%  ({current}/{total})");
+        }
     }
 }
